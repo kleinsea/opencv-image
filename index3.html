@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,user-scalable=no, initial-scale=1.0" />
+  <link rel="stylesheet" href="./index.css" />
+  <script src="./wasmBinaryFile.js"></script>
+  <script src="./opencv.js"></script>
+  <script src="./index3.js"></script>
+  <title>webRTC</title>
+</head>
+
+<body>
+  <div class="container">
+    <video id="video" autoplay playsinline></video>
+    <div class="openVideo" onclick="handleOpenVideoClick()">打开摄像头</div>
+    <canvas id="canvas"></canvas>
+    <div class="openVideo2">当前角度：<span id="openVideo2Text"></span></div>
+    <img id="photo" src="./test.jpg" />
+    <canvas id="photos"></canvas>
+    <canvas id="photo2"></canvas>
+  </div>
+  <script>
+    var video = document.getElementById("video");
+    var canvas = document.getElementById("canvas");
+    var context = canvas.getContext("2d");
+    var image = document.getElementById("photo");
+    var streaming = false;
+    let pix = 1;
+    let interVals;
+    let sourceMat;
+    function getUserMedia(constraints, success, error) {
+      if (navigator.mediaDevices) {
+        //最新的标准API
+        navigator.mediaDevices
+          .getUserMedia(constraints)
+          .then(success)
+          .catch(error);
+      } else if (navigator.webkitGetUserMedia) {
+        //webkit核心浏览器
+        navigator.webkitGetUserMedia(constraints, success, error);
+      } else if (navigator.mozGetUserMedia) {
+        //firfox浏览器
+        navigator.mozGetUserMedia(constraints, success, error);
+      } else if (navigator.getUserMedia) {
+        //旧版API
+        navigator.getUserMedia(constraints, success, error);
+      } else {
+        alert("您的浏览器不支持使用此功能，请更换浏览器")
+      }
+    }
+    function handleOpenVideoClick() {
+      console.log("打开摄像头")
+      // facingMode: { exact: "environment" }
+      getUserMedia({
+        video: { },
+        audio: false
+      }, function (stream) {
+        console.log("成功打开了")
+        video.srcObject = stream;
+        video.style.display = "block";
+        interVals = setInterval(() => {
+          // sourceMat && sourceMat.delete();
+          drawImage()
+        }, 100);
+      }, function () {
+        console.log("访问摄像头失败")
+      })
+    }
+    function drawImage() {
+      // canvas.width = video.offsetWidth * pix
+      // canvas.height = video.offsetHeight * pix
+      // context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      // const data = canvas.toDataURL("image/jpeg");
+      // image.src = data
+      const sourceMat = cv.imread(document.getElementById("photo"));
+      itemExtract(sourceMat)
+    }
+    drawImage()
+  </script>
+</body>
+
+</html>

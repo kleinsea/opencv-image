@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,user-scalable=no, initial-scale=1.0" />
+  <link rel="stylesheet" href="./index.css" />
+  <script src="./wasmBinaryFile.js"></script>
+  <script src="./opencv.js"></script>
+  <script src="./index.js"></script>
+  <title>webRTC</title>
+</head>
+
+<body>
+  <div class="container">
+    <div class="video-container">
+      <video id="video" autoplay playsinline></video>
+    </div>
+    <div class="openVideo" onclick="handleOpenVideoClick()">打开摄像头</div>
+    <canvas id="canvas"></canvas>
+    <div class="openVideo2" onclick="closeVideo()">当前角度：<span id="openVideo2Text"></span></div>
+    <img id="photo" />
+    <canvas id="photos"></canvas>
+    <canvas id="photo2"></canvas>
+    <img src="" id="showImage" alt="">
+  </div>
+  <script>
+    
+    var canvas = document.getElementById("canvas");
+    var context = canvas.getContext("2d");
+    var image = document.getElementById("photo");
+    var streaming = false;
+    let pix = 1;
+    let interVals;
+    let sourceMat;
+    let mediaStreamTrack;
+    let imgData;
+    function getUserMedia(constraints, success, error) {
+      if (navigator.mediaDevices) {
+        //最新的标准API
+        navigator.mediaDevices
+          .getUserMedia(constraints)
+          .then(success)
+          .catch(error);
+      } else if (navigator.webkitGetUserMedia) {
+        //webkit核心浏览器
+        navigator.webkitGetUserMedia(constraints, success, error);
+      } else if (navigator.mozGetUserMedia) {
+        //firfox浏览器
+        navigator.mozGetUserMedia(constraints, success, error);
+      } else if (navigator.getUserMedia) {
+        //旧版API
+        navigator.getUserMedia(constraints, success, error);
+      } else {
+        alert("您的浏览器不支持使用此功能，请更换浏览器")
+      }
+    }
+    function handleOpenVideoClick() {
+      console.log("打开摄像头")
+      // facingMode: { exact: "environment" }
+      getUserMedia({
+        video: {  },
+        audio: false
+      }, function (stream) {
+        console.log("成功打开了")
+        video.srcObject = stream;
+        mediaStreamTrack = stream;
+        video.style.display = "block";
+        interVals = setInterval(() => {
+          // sourceMat && sourceMat.delete();
+          drawImage()
+        }, 500);
+      }, function () {
+        console.log("访问摄像头失败")
+      })
+    }
+    function closeVideo (){
+      mediaStreamTrack.getTracks().map(v=> v.stop())
+      document.querySelector("div.video-container").style.display = "none"
+      // mediaStreamTrack && mediaStreamTrack.stop()
+      document.querySelector("#showImage").src = imgData
+    }
+    function drawImage() {
+      console.log(2222)
+      var video = document.getElementById("video");
+      canvas.width = video.offsetWidth * pix
+      canvas.height = video.offsetHeight * pix
+      if(!video) return false
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      imgData = canvas.toDataURL("image/jpeg");
+      image.src = imgData
+      const sourceMat = cv.imread(document.getElementById("canvas"));
+      const handleImage = preHandleImage(sourceMat);
+      let cannyRectImage = cannyRect(handleImage) || "未知"
+      sourceMat.delete()
+      if(cannyRectImage === 0 || cannyRectImage === 90) {
+        closeVideo()
+      }
+      document.getElementById("openVideo2Text").innerHTML = cannyRectImage
+    }
+    function preHandleImage(sourceMat) {
+      // 灰度
+      cv.cvtColor(sourceMat, sourceMat, cv.COLOR_BGR2GRAY, 0);
+      // 二值化 好像不是特别理想
+      // cv.threshold(sourceMat, sourceMat, 165, 255, cv.THRESH_BINARY);
+      // cv.erode(sourceMat, sourceMat, new cv.Mat(9, 9, cv.CV_8U))
+      // 中值滤波，降噪
+      cv.medianBlur(sourceMat, sourceMat, 9);
+      return sourceMat
+    }
+    function cannyRect(sourceMat) {
+      let cannyMat = new cv.Mat();
+      cv.Canny(sourceMat, cannyMat, 50, 150, 3);
+      // 霍夫变换 提取直线
+      return handleHoughLines(cannyMat);
+    }
+    function handleHoughLines(sourceMat) {
+      let dst = cv.Mat.zeros(sourceMat.rows, sourceMat.cols, cv.CV_8UC3);
+      let lines = new cv.Mat();
+      cv.HoughLines(sourceMat, lines, 1, Math.PI / 180, 180, 0, 0, 0, Math.PI);
+      sourceMat.delete()
+      for (let i = 0; i < lines.rows; ++i) {
+        let rho = lines.data32F[i * 2];
+        let theta = lines.data32F[i * 2 + 1];
+        let a = Math.cos(theta);
+        let b = Math.sin(theta);
+        let x0 = a * rho;
+        let y0 = b * rho;
+        let startPoint = { x: x0 - 400 * b, y: y0 + 400 * a };
+        let endPoint = { x: x0 + 400 * b, y: y0 - 400 * a };
+        cv.line(dst, startPoint, endPoint, [255, 0, 0, 255]);
+      }
+      const filterLinesData = filterLines(lines)
+      const reg = filterLinesByHoughLines(filterLinesData);
+      lines.delete();
+      return reg;
+    }
+    function filterLines(lines) {
+      let filterLines = [];
+      for (let i = 0; i < lines.rows; ++i) {
+        let rho = lines.data32F[i * 2];
+        let theta = lines.data32F[i * 2 + 1];
+        let a = Math.cos(theta);
+        let b = Math.sin(theta);
+        let x0 = a * rho;
+        let y0 = b * rho;
+        let startPoint = {
+          x: (x0 - 400 * b).toFixed(0),
+          y: (y0 + 400 * a).toFixed(0)
+        };
+        let endPoint = {
+          x: (x0 + 400 * b).toFixed(0),
+          y: (y0 - 400 * a).toFixed(0)
+        };
+        filterLines.push({
+          start: startPoint,
+          end: endPoint
+        });
+      }
+      return filterLines
+    }
+    function filterLinesByHoughLines(filterLines) {
+      let arr = {};
+      filterLines.map(v => {
+        const angle = Math.atan2(
+          Math.abs(Number(v.end.x) - Number(v.start.x)),
+          Math.abs(Number(v.end.y) - Number(v.start.y))
+        );
+        const res = (angle * (180 / Math.PI)).toFixed(0);
+        arr[res] = arr[res] > 0 ? arr[res] + 1 : 1;
+      });
+      let keyMax,
+        value = 0;
+      for (const key in arr) {
+        if (value < arr[key]) {
+          value = arr[key];
+          keyMax = key;
+        }
+      }
+      return keyMax
+    }
+  </script>
+</body>
+
+</html>
